@@ -1,7 +1,6 @@
 /*
  * LimeMicroSystem transceiver driver
- *
- * Copyright (C) 2015 Amarisoft/LimeMicroSystems
+ * Copyright (C) 2017 Amarisoft/LimeMicroSystems
  */
 #include <stdlib.h>
 #include <stdio.h>
@@ -15,13 +14,7 @@
 #include <sys/time.h>
 #include <iostream>
 
-
-#define TRX_BUFFER_COUNT     32      //number of in-flight tranfer buffers
-
-#define TRX_TRANSFER_SIZE    4096  //size of a single transfer buffer
-
-#define SAMPLES_PER_PACKET  1360    //number of complex 12 bit samples in one packet
-
+#define SAMPLES_PER_PACKET  1020    //number of complex 12 bit samples in one packet
 
 extern "C" {
 #include "trx_driver.h"
@@ -121,44 +114,33 @@ static int trx_lms7002m_read(TRXState *s1, trx_timestamp_t *ptimestamp, void **p
     return ret;
 }
 
-#define SAMPLE_RATE_COUNT 8
 static int trx_lms7002m_get_sample_rate(TRXState *s1, TRXFraction *psample_rate,
                                      int *psample_rate_num, int sample_rate_min)
 {
     TRXLmsState *s = (TRXLmsState*)s1->opaque;
 
     // sample rate not specified, align on 1.92Mhz
-    if (!s->sample_rate) {
+    if (!s->sample_rate)
+    {
         int i, n;
-        static const int sample_rate_num_tab[SAMPLE_RATE_COUNT] = {
-            1,
-            2,
-            3,
-            6,
-            9,
-            12,
-            16,
-            18,
-        };
-        // leave some space for the low pass filter
-        sample_rate_min = lround(sample_rate_min * 1.125);
-        for(i = 0; i < SAMPLE_RATE_COUNT; i++) {
-            n = sample_rate_num_tab[i];
-            if (sample_rate_min <= n * 1920000) {
+        static const char sample_rate_tab[] = {1,2,4,8,12,16};
+        for(i = 0; i < sizeof(sample_rate_tab); i++)
+        {
+            n = sample_rate_tab[i];
+            if (sample_rate_min <= n * 1920000) 
+	    {
                 *psample_rate_num = n;
                 psample_rate->num = n * 1920000;
                 psample_rate->den = 1;
                 return 0;
             }
         }
-
-    } else {
+    } 
+    else
+    {
         int sr;
-
-        for (sr = (int)(s->sample_rate); sr >= sample_rate_min && ((sr % 1000) == 0); sr >>= 1) {
+        for (sr = (int)(s->sample_rate); sr >= sample_rate_min && ((sr % 1000) == 0); sr >>= 1) 
             psample_rate->num = sr;
-        }
-
         psample_rate->den = 1;
         *psample_rate_num = 0;
         return 0;
@@ -199,6 +181,15 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     double refCLK;
     printf ("CH RX %d; TX %d\n",s->rx_channel_count,s->tx_channel_count);
 
+    printf("SR:   %.3f MHz\n", (float)s->sample_rate / 1e6);
+    printf("DEC/INT: %d\n", s->dec_inter);
+
+    if (LMS_SetSampleRate(s->device,s->sample_rate,s->dec_inter)!=0)
+    {
+        fprintf(stderr, "Failed to set sample rate %s\n",LMS_GetLastErrorMessage());
+        return -1;
+    }
+
     for(int ch=0; ch< s->rx_channel_count; ++ch)
     {
 	    printf ("setup RX stream %d\n",ch);
@@ -220,15 +211,6 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 	    s->tx_stream[ch].dataFmt = lms_stream_t::LMS_FMT_F32;
 	    s->tx_stream[ch].isTx = true;
 	    LMS_SetupStream(s->device, &s->tx_stream[ch]);
-    }
-
-    printf("SR:   %.3f MHz\n", (float)s->sample_rate / 1e6);
-    printf("DEC/INT: %d\n", s->dec_inter);
-
-    if (LMS_SetSampleRate(s->device,s->sample_rate,s->dec_inter)!=0)
-    {
-        fprintf(stderr, "Failed to set sample rate %s\n",LMS_GetLastErrorMessage());
-        return -1;
     }
 
     if (LMS_SetLOFrequency(s->device,LMS_CH_RX, 0, (double)p->rx_freq[0])!=0)
@@ -263,23 +245,23 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 
     if (calibrate)
     {
-        for(int ch=0; ch< s->tx_channel_count; ++ch) {
+        for(int ch=0; ch< s->tx_channel_count; ++ch)
+        {
             printf("Calibrating Tx channel :%i\n", ch+1);
-            if (LMS_Calibrate(s->device, LMS_CH_TX, ch,(double)p->tx_bandwidth[0],0)!=0)
-            {
+            if (LMS_Calibrate(s->device, LMS_CH_TX, ch,(double)p->tx_bandwidth[0],0)!=0)  
                 fprintf(stderr, "Failed to calibrate Tx: %s\n", LMS_GetLastErrorMessage());
-                return -1;
-            }
+            if (LMS_SetLPFBW(s->device, LMS_CH_TX, ch,(double)(p->tx_bandwidth[0]>5e6 ? p->tx_bandwidth[0] : 5e6))!=0)
+                fprintf(stderr, "Failed set TX LPF: %s\n", LMS_GetLastErrorMessage());            
+	    LMS_SetGaindB(s->device, LMS_CH_TX, ch, 60);
         }
 
-        for(int ch=0; ch< s->rx_channel_count; ++ch) {
+        for(int ch=0; ch< s->rx_channel_count; ++ch)
+        {
             printf("Calibrating Rx channel :%i\n", ch+1);
-            // Receiver calibration
-            if (LMS_Calibrate(s->device, LMS_CH_RX, ch,(double)p->tx_bandwidth[0],0)!=0)
-            {
+            if (LMS_Calibrate(s->device, LMS_CH_RX, ch,(double)p->rx_bandwidth[0],0)!=0)
                 fprintf(stderr, "Failed to calibrate Rx: %s\n", LMS_GetLastErrorMessage());
-                return -1;
-            }
+            if (LMS_SetLPFBW(s->device, LMS_CH_RX, ch,(double)p->rx_bandwidth[0])!=0)
+                fprintf(stderr, "Failed to set RX LPF: %s\n", LMS_GetLastErrorMessage());
         }
     }
 
@@ -312,7 +294,7 @@ int trx_driver_init(TRXState *s1)
     if (trx_get_param_double(s1, &val, "sample_rate") >= 0)
         s->sample_rate = val*1e6;
 
-    s->dec_inter = 2;
+    s->dec_inter = 0;
     if (trx_get_param_double(s1, &val, "dec_inter") >= 0)
         s->dec_inter = val;
 
@@ -355,6 +337,7 @@ int trx_driver_init(TRXState *s1)
     {
         s->tcxo_calc = val;
         LMS_VCTCXOWrite(s->device,val);
+	printf("DAC WRITE\n");
     }
 
     if ( LMS_Init(s->device)!=0)
