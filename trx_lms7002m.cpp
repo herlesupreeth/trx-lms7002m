@@ -13,31 +13,28 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <iostream>
-
-#define SAMPLES_PER_PACKET  1020    //number of complex 12 bit samples in one packet
+#include <lime/LimeSuite.h>
 
 extern "C" {
 #include "trx_driver.h"
 };
 
-#include <lime/LimeSuite.h>
-
-
+#define SAMPLES_PER_PACKET  1020    //number of complex 12 bit samples in one packet
 using namespace std;
 typedef struct TRXLmsState          TRXLmsState;
-
 
 struct TRXLmsState {
     lms_device_t *device;
     lms_stream_t rx_stream[4];
     lms_stream_t tx_stream[4];
     int tcxo_calc;          /* values from 0 to 255*/
-    int   dec_inter;
+    int dec_inter;
     int started;
     int sample_rate;
     int tx_channel_count;
     int rx_channel_count;
-    char* calibration;
+    int calibrate;
+    int ini_file;
 };
 
 static int64_t trx_lms_t0 = 0;
@@ -158,26 +155,28 @@ static int trx_lms7002m_get_tx_samples_per_packet_func(TRXState *s1)
 static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 {
     TRXLmsState *s = (TRXLmsState*)s1->opaque;
-    int calibrate=1;
 
     if (p->rf_port_count != 1) {
         fprintf(stderr, "Only one port allowed\n");
         return -1;
     }
 
-    LMS_EnableCalibCache(s->device,false);
-    if (s->calibration) {
-        if (!strcasecmp(s->calibration, "force")) {
-            printf("Force calibration\n");
-        } else if (!strcasecmp(s->calibration, "none")) {
-            printf("Skip calibration\n");
-            calibrate = 0;
-        }
-    }
-
     s->sample_rate = p->sample_rate[0].num / p->sample_rate[0].den;
     s->tx_channel_count = p->tx_channel_count;
     s->rx_channel_count = p->rx_channel_count;
+
+    if (s->ini_file == 0)
+    {
+        for(int ch=0; ch< s->rx_channel_count; ++ch)
+        { 
+            printf("Set CH%d gains: rx %1.0f; tx %1.0f\n",ch+1, p->rx_gain[ch], p->tx_gain[ch]);
+            LMS_EnableChannel(s->device,LMS_CH_RX,ch,true);
+            LMS_EnableChannel(s->device,LMS_CH_TX,ch,true);
+            LMS_SetGaindB(s->device,LMS_CH_RX,ch,(int)(p->rx_gain[ch]+0.5));
+            LMS_SetGaindB(s->device,LMS_CH_TX,ch,(int)(p->tx_gain[ch]+0.5));
+        }
+    }
+
     double refCLK;
     printf ("CH RX %d; TX %d\n",s->rx_channel_count,s->tx_channel_count);
 
@@ -199,7 +198,6 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 	    s->rx_stream[ch].dataFmt = lms_stream_t::LMS_FMT_F32;
 	    s->rx_stream[ch].isTx = false;
     	    LMS_SetupStream(s->device, &s->rx_stream[ch]);
-
     }
 
     for(int ch=0; ch< s->tx_channel_count; ++ch)
@@ -243,7 +241,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 	    }
     }
 
-    if (calibrate)
+    if (s->calibrate)
     {
         for(int ch=0; ch< s->tx_channel_count; ++ch)
         {
@@ -252,7 +250,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
                 fprintf(stderr, "Failed to calibrate Tx: %s\n", LMS_GetLastErrorMessage());
             if (LMS_SetLPFBW(s->device, LMS_CH_TX, ch,(double)(p->tx_bandwidth[0]>5e6 ? p->tx_bandwidth[0] : 5e6))!=0)
                 fprintf(stderr, "Failed set TX LPF: %s\n", LMS_GetLastErrorMessage());            
-	    LMS_SetGaindB(s->device, LMS_CH_TX, ch, 60);
+	    LMS_SetGaindB(s->device, LMS_CH_TX, ch, (int)(p->tx_gain[ch]+0.5));
         }
 
         for(int ch=0; ch< s->rx_channel_count; ++ch)
@@ -298,32 +296,16 @@ int trx_driver_init(TRXState *s1)
     if (trx_get_param_double(s1, &val, "dec_inter") >= 0)
         s->dec_inter = val;
 
-    configFile = trx_get_param_string(s1, "config_file");
-    if (!configFile) {
-        fprintf(stderr, "Config file is mandatory to configure LMS7002\n");
-        return -1;
-    }
-
     /* Get device index */
     lms7002_index = 0;
     if (trx_get_param_double(s1, &val, "lms7002_index") >= 0)
         lms7002_index = val;
-
-    /* Get device index */
-    stream_index = -1;
-    if (trx_get_param_double(s1, &val, "streamboard_index") >= 0)
-        stream_index = val;
 
     // Open LMS7002 port
     int n= LMS_GetDeviceList(list);
 
     if (n <= lms7002_index || lms7002_index < 0) {
         fprintf(stderr, "No LMS7002 board found: %d\n", n);
-        return -1;
-    }
-
-    if (n <= stream_index) {
-        fprintf(stderr, "No Stream board found: %d\n", n);
         return -1;
     }
 
@@ -339,27 +321,50 @@ int trx_driver_init(TRXState *s1)
         LMS_VCTCXOWrite(s->device,val);
 	printf("DAC WRITE\n");
     }
-
-    if ( LMS_Init(s->device)!=0)
+  
+    //Configuration INI file
+    configFile = trx_get_param_string(s1, "config_file");
+    if (configFile)
     {
-        fprintf(stderr, "LMS Init failed: %s\n",LMS_GetLastErrorMessage());
-        return -1;
+        configFile1 = (char*)malloc(strlen(s1->path) + strlen(configFile) + 2);
+        sprintf(configFile1, "%s/%s", s1->path, configFile);
+
+        fprintf(stderr, "Config file: %s\n", configFile1);
+        if  (LMS_LoadConfig(s->device,configFile1)!=0) //load registers configuration from file
+        {
+            fprintf(stderr, "Can't open %s\n", configFile1);
+            return -1;
+        }
+        free(configFile1);
+        s->ini_file = 1;
     }
-
-    configFile1 = (char*)malloc(strlen(s1->path) + strlen(configFile) + 2);
-    sprintf(configFile1, "%s/%s", s1->path, configFile);
-
-    fprintf(stderr, "Config file: %s\n", configFile1);
-    if  (LMS_LoadConfig(s->device,configFile1)!=0) //load registers configuration from file
+    else
     {
-        fprintf(stderr, "Can't open %s\n", configFile1);
-        return -1;
-    }
+        if ( LMS_Init(s->device)!=0)
+        {
+            fprintf(stderr, "LMS Init failed: %s\n",LMS_GetLastErrorMessage());
+            return -1;
+        }
+        s->ini_file = 0;
+    }      
     free(configFile);
-    free(configFile1);
 
     /* Auto calibration */
-    s->calibration = trx_get_param_string(s1, "calibration");
+    char* calibration;
+    LMS_EnableCalibCache(s->device,false);
+    calibration = trx_get_param_string(s1, "calibration");
+    s->calibrate = 1;
+    if (calibration)
+    {
+	if (!strcasecmp(calibration, "none"))
+	{
+	    printf("Skip calibration\n");
+	    s->calibrate = 0;
+	}
+	else if (!strcasecmp(calibration, "force"))
+	    printf("Force calibration\n");
+    }
+    free(calibration);
 
     /* Set callbacks */
     s1->opaque = s;
