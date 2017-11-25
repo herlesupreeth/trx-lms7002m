@@ -1,7 +1,6 @@
 #!/bin/bash
 # Copyright (C) 2015-2017 Amarisoft/LimeMicroSystems
-# Install script version 2017-02-10
-
+# Install script version 2017-11-25
 
 DIR=$(cd $(dirname $0) && pwd)
 DST=$(cd $1 && pwd)
@@ -34,13 +33,14 @@ if [ -e "/etc/fedora-release" ]; then
     fi
 
 else
-    version=$(grep -i -o -P "Ubuntu \d+" /etc/lsb-release | cut -d " " -f2)
-    if [ "$version" = "" ]; then
+    version=$(gawk -F= '/^PRETTY_NAME/{print $2}' /etc/os-release | sed 's/"//g')
+    fork_base=$(gawk -F= '/^ID_LIKE/{print $2}' /etc/os-release)
+    if [ "$fork_base" == *"ubuntu"* ]; then
         echo "Sorry, installation procedure only available on Fedora/Ubuntu distributions."
         exit 1
     fi
 
-    echo "Ubuntu v$version found"
+    echo "$version found"
     apt-get -qq install -y libssl-dev libusb-1.0-0-dev 1>/dev/null
 fi
 
