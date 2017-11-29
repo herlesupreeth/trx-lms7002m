@@ -1,5 +1,5 @@
 /* 
- * Amarisoft Transceiver API version 2017-02-10
+ * Amarisoft Transceiver API version 2017-10-13
  * Copyright (C) 2013-2017 Amarisoft
  */
 #ifndef TRX_DRIVER_H
@@ -7,7 +7,7 @@
 
 #include <inttypes.h>
 
-#define TRX_API_VERSION 11
+#define TRX_API_VERSION 12
 
 #define TRX_MAX_CHANNELS 16
 #define TRX_MAX_RF_PORT  TRX_MAX_CHANNELS
@@ -43,6 +43,7 @@ typedef struct {
     enum {
         TRX_CELL_TYPE_FDD,
         TRX_CELL_TYPE_TDD,
+        TRX_NBCELL_TYPE_FDD,
     } type;
 
     union {
@@ -102,6 +103,9 @@ typedef struct {
     /* Number of times the receive FIFO overflowed. */
     int64_t rx_overflow_count;
 } TRXStatistics;
+
+
+typedef void __attribute__ ((format (printf, 2, 3))) (*trx_printf_cb)(void *, const char *fmt, ... );
 
 /* only used for TDD */
 #define TRX_WRITE_FLAG_PADDING        (1 << 0)
@@ -207,7 +211,7 @@ struct TRXState {
     int (*trx_get_stats)(TRXState *s, TRXStatistics *m);
 
     /* Callback must allocate info buffer that will be displayed */
-    int (*trx_get_info)(TRXState *s, char **info);
+    void (*trx_dump_info)(TRXState *s, trx_printf_cb cb, void *opaque);
 
     /* Return the absolute TX power in dBm for the TX channel
        'channel_num' assuming a square signal of maximum
