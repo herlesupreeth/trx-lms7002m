@@ -19,6 +19,8 @@ extern "C" {
 #include "trx_driver.h"
 };
 
+#define CALIBRATE_FILTER    2
+#define CALIBRATE_IQDC      1
 #define MAX_NUM_CH 2   
 using namespace std;
 typedef struct TRXLmsState          TRXLmsState;
@@ -54,16 +56,16 @@ static void trx_lms7002m_end(TRXState *s1)
 {
     TRXLmsState *s = (TRXLmsState*)s1->opaque;
     for (int ch = 0; ch < s->rx_channel_count; ch++)
-    {
 	LMS_StopStream(&s->rx_stream[ch]);
-	LMS_DestroyStream(s->device,&s->rx_stream[ch]);
-    }
 
     for (int ch = 0; ch < s->tx_channel_count; ch++)
-    {
 	LMS_StopStream(&s->tx_stream[ch]);
+
+    for (int ch = 0; ch < s->rx_channel_count; ch++)
+	LMS_DestroyStream(s->device,&s->rx_stream[ch]);
+
+    for (int ch = 0; ch < s->tx_channel_count; ch++)
 	LMS_DestroyStream(s->device,&s->tx_stream[ch]);
-    }
 
     LMS_Close(s->device);
     for (int ch = 0; ch < s->rx_channel_count; ch++)
@@ -243,6 +245,19 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
             LMS_SetGaindB(s->device,LMS_CH_TX,ch,(int)(p->tx_gain[ch]+0.5));
         }
     }
+    else
+    {
+        for(int ch=0; ch< s->rx_channel_count; ++ch)
+        { 
+	    int ant = LMS_GetAntenna(s->device, LMS_CH_RX, ch);
+	    LMS_SetAntenna(s->device, LMS_CH_RX, ch, ant);
+	}
+        for(int ch=0; ch< s->tx_channel_count; ++ch)
+        { 
+	    int ant = LMS_GetAntenna(s->device, LMS_CH_TX, ch);
+	    LMS_SetAntenna(s->device, LMS_CH_TX, ch, ant);
+	}
+    }
 
     double refCLK;
     printf ("CH RX %d; TX %d\n",s->rx_channel_count,s->tx_channel_count);
@@ -260,7 +275,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     {
 	    printf ("setup RX stream %d\n",ch);
 	    s->rx_stream[ch].channel = ch;
-	    s->rx_stream[ch].fifoSize = 128*1024;
+	    s->rx_stream[ch].fifoSize = 256*1024;
 	    s->rx_stream[ch].throughputVsLatency = 0.3;
 	    s->rx_stream[ch].isTx = false;
     	    LMS_SetupStream(s->device, &s->rx_stream[ch]);
@@ -270,7 +285,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     {
 	    printf ("setup TX stream %d\n",ch);
 	    s->tx_stream[ch].channel = ch;
-	    s->tx_stream[ch].fifoSize = 128*1024;
+	    s->tx_stream[ch].fifoSize = 256*1024;
 	    s->tx_stream[ch].throughputVsLatency = 0.3;
 	    s->tx_stream[ch].isTx = true;
 	    LMS_SetupStream(s->device, &s->tx_stream[ch]);
@@ -306,15 +321,13 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 	    }
     }
 
-    if (s->calibrate)
+    if (s->calibrate & CALIBRATE_FILTER)
     {
         for(int ch=0; ch< s->tx_channel_count; ++ch)
         {
-            printf("Calibrating Tx channel :%i\n", ch+1);
+            printf("Configuring Tx LPF for ch %i\n", ch);
             unsigned gain = p->tx_gain[ch];
             LMS_GetGaindB(s->device, LMS_CH_TX, ch, &gain);
-            if (LMS_Calibrate(s->device, LMS_CH_TX, ch,(double)p->tx_bandwidth[0],0)!=0)  
-                fprintf(stderr, "Failed to calibrate Tx: %s\n", LMS_GetLastErrorMessage());
             if (LMS_SetLPFBW(s->device, LMS_CH_TX, ch,(double)(p->tx_bandwidth[0]>5e6 ? p->tx_bandwidth[0] : 5e6))!=0)
                 fprintf(stderr, "Failed set TX LPF: %s\n", LMS_GetLastErrorMessage());            
 	    LMS_SetGaindB(s->device, LMS_CH_TX, ch, gain);
@@ -322,11 +335,26 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 
         for(int ch=0; ch< s->rx_channel_count; ++ch)
         {
-            printf("Calibrating Rx channel :%i\n", ch+1);
-            if (LMS_Calibrate(s->device, LMS_CH_RX, ch,(double)p->rx_bandwidth[0],0)!=0)
-                fprintf(stderr, "Failed to calibrate Rx: %s\n", LMS_GetLastErrorMessage());
+            printf("Configuring Rx LPF for ch %i\n", ch);
             if (LMS_SetLPFBW(s->device, LMS_CH_RX, ch,(double)p->rx_bandwidth[0])!=0)
                 fprintf(stderr, "Failed to set RX LPF: %s\n", LMS_GetLastErrorMessage());
+        }
+    }
+    
+    if (s->calibrate & CALIBRATE_IQDC)
+    {
+        for(int ch=0; ch< s->tx_channel_count; ++ch)
+        {
+            printf("Calibrating Tx channel :%i\n", ch);
+            if (LMS_Calibrate(s->device, LMS_CH_TX, ch,(double)p->tx_bandwidth[0],0)!=0)  
+                fprintf(stderr, "Failed to calibrate Tx: %s\n", LMS_GetLastErrorMessage());
+        }
+
+        for(int ch=0; ch< s->rx_channel_count; ++ch)
+        {
+            printf("Calibrating Rx channel :%i\n", ch);
+            if (LMS_Calibrate(s->device, LMS_CH_RX, ch,(double)p->rx_bandwidth[0],0)!=0)
+                fprintf(stderr, "Failed to calibrate Rx: %s\n", LMS_GetLastErrorMessage());
         }
     }
 
@@ -418,16 +446,17 @@ int trx_driver_init(TRXState *s1)
     char* calibration;
     LMS_EnableCalibCache(s->device,false);
     calibration = trx_get_param_string(s1, "calibration");
-    s->calibrate = 1;
+    s->calibrate = CALIBRATE_FILTER;
     if (calibration)
     {
 	if (!strcasecmp(calibration, "none"))
-	{
-	    printf("Skip calibration\n");
 	    s->calibrate = 0;
-	}
-	else if (!strcasecmp(calibration, "force"))
-	    printf("Force calibration\n");
+	else if ((!strcasecmp(calibration, "force")) || (!strcasecmp(calibration, "all")))
+            s->calibrate = CALIBRATE_FILTER | CALIBRATE_IQDC;
+        else if (!strcasecmp(calibration, "filter"))
+            s->calibrate = CALIBRATE_FILTER;
+        else if (!strcasecmp(calibration, "iq_dc"))
+            s->calibrate = CALIBRATE_IQDC;
         free(calibration);
     }
     /*sample format*/
