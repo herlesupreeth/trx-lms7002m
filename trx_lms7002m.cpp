@@ -37,6 +37,10 @@ struct TRXLmsState {
     int rx_channel_count;
     int calibrate;
     int ini_file;
+    float rx_power;
+    float tx_power;
+    bool rx_power_available;
+    bool tx_power_available;
 };
 
 
@@ -100,8 +104,6 @@ static int trx_lms7002m_read(TRXState *s1, trx_timestamp_t *ptimestamp, void **p
     lms_stream_meta_t meta;
     meta.waitForTimestamp = false;
     meta.flushPartialPacket = false;
-    static uint64_t next_ts = 0;
-
     // First shot ?
     if (!s->started) {
     	for (int ch = 0; ch < s->rx_channel_count; ch++)
@@ -220,6 +222,30 @@ static int trx_lms7002m_get_tx_samples_per_packet_func(TRXState *s1)
 
     return (s->tx_stream->dataFmt == lms_stream_t::LMS_FMT_I12 ? 1360 : 1020)/s->tx_channel_count;
 }
+
+ static int trx_lms7002m_get_abs_rx_power_func(TRXState *s1, float *presult, int channel_num)
+ {
+    TRXLmsState *s = (TRXLmsState*)s1->opaque;
+    if (s->rx_power_available)
+    {
+        *presult = s->rx_power;
+        printf("rx power %f\n", *presult);
+        return 0;
+    }
+    return -1;
+ }
+
+ static int trx_lms7002m_get_abs_tx_power_func(TRXState *s1, float *presult, int channel_num)
+ {
+    TRXLmsState *s = (TRXLmsState*)s1->opaque;
+    if (s->tx_power_available)
+    {
+        *presult = s->tx_power;
+        printf("tx power %f\n", *presult);
+        return 0;
+    }
+    return -1;
+ }
 
 static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 {
@@ -484,5 +510,7 @@ int trx_driver_init(TRXState *s1)
     s1->trx_start_func = trx_lms7002m_start;
     s1->trx_get_sample_rate_func = trx_lms7002m_get_sample_rate;
     s1->trx_get_tx_samples_per_packet_func = trx_lms7002m_get_tx_samples_per_packet_func;
+    s1->trx_get_abs_rx_power_func = trx_lms7002m_get_abs_rx_power_func;
+    s1->trx_get_abs_tx_power_func = trx_lms7002m_get_abs_tx_power_func;
     return 0;
 }
