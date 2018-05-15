@@ -90,12 +90,11 @@ static void trx_lms7002m_write(TRXState *s1, trx_timestamp_t timestamp,
         return;
     lms_stream_meta_t meta;
     meta.waitForTimestamp = true;
-    meta.flushPartialPacket = false;
+    meta.flushPartialPacket = (flags&TRX_WRITE_FLAG_END_OF_BURST);
     meta.timestamp = timestamp;
 
     for (int ch = 0; ch < s->tx_channel_count; ch++)
     	LMS_SendStream(&s->tx_stream[ch],(const void*)samples[ch],count,&meta,30);
-
 }
 
 static int trx_lms7002m_read(TRXState *s1, trx_timestamp_t *ptimestamp, void **psamples, int count, int port)
@@ -144,7 +143,6 @@ static void trx_lms7002m_write_int(TRXState *s1, trx_timestamp_t timestamp,
 
     for (int ch = 0; ch < s->tx_channel_count; ch++)
     	LMS_SendStream(&s->tx_stream[ch],(const void*)tx_buffers[ch],count,&meta,30);
-
 }
 
 static int trx_lms7002m_read_int(TRXState *s1, trx_timestamp_t *ptimestamp, void **psamples, int count, int port)
