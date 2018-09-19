@@ -204,9 +204,7 @@ static int trx_lms7002m_get_sample_rate(TRXState *s1, TRXFraction *psample_rate,
     } 
     else
     {
-        int sr;
-        for (sr = (int)(s->sample_rate); sr >= sample_rate_min && ((sr % 1000) == 0); sr >>= 1) 
-            psample_rate->num = sr;
+        psample_rate->num = (int)(s->sample_rate);
         psample_rate->den = 1;
         *psample_rate_num = 0;
         return 0;
