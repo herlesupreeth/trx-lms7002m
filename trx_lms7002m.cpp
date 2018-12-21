@@ -1,6 +1,6 @@
 /*
  * LimeMicroSystem transceiver driver
- * Copyright (C) 2017 Amarisoft/LimeMicroSystems
+ * Copyright (C) 2015-2018 Amarisoft/LimeMicroSystems
  */
 #include <stdlib.h>
 #include <stdio.h>
@@ -434,8 +434,25 @@ int trx_driver_init(TRXState *s1)
     if (trx_get_param_double(s1, &val, "tcxo_calc") >= 0)
     {
         s->tcxo_calc = val;
-        LMS_VCTCXOWrite(s->device,val);
+        LMS_WriteCustomBoardParam(s->device, 0, val, "");
 	printf("DAC WRITE\n");
+    }
+
+    s->rx_power = 0.0;
+    s->tx_power = 0.0;
+    s->rx_power_available = false;
+    s->tx_power_available = false;
+    if (trx_get_param_double(s1, &val, "rx_power") >= 0)
+    {
+        s->rx_power = val;
+        s->rx_power_available = true;
+        printf("rx power %.1f dBm\n", s->rx_power);
+    }
+    if (trx_get_param_double(s1, &val, "tx_power") >= 0)
+    {
+        s->tx_power = val;
+        s->tx_power_available = true;
+        printf("tx power %.1f dBm\n", s->tx_power);
     }
   
     //Configuration INI file
