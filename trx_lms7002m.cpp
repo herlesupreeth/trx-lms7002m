@@ -289,7 +289,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 
     if (LMS_SetSampleRate(s->device,s->sample_rate,s->dec_inter)!=0)
     {
-        fprintf(stderr, "Failed to set sample rate %s\n",LMS_GetLastErrorMessage());
+        fprintf(stderr, "Failed to set sample rate\n");
         return -1;
     }
 
@@ -315,13 +315,13 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 
     if (LMS_SetLOFrequency(s->device,LMS_CH_RX, 0, (double)p->rx_freq[0])!=0)
     {
-        fprintf(stderr, "Failed to Set Rx frequency: %s\n", LMS_GetLastErrorMessage());
+        fprintf(stderr, "Failed to Set Rx frequency\n");
         return -1;
     }
 
     if (LMS_SetLOFrequency(s->device,LMS_CH_TX, 0,(double)p->tx_freq[0])!=0)
     {
-        fprintf(stderr, "Failed to Set Tx frequency: %s\n", LMS_GetLastErrorMessage());
+        fprintf(stderr, "Failed to Set Tx frequency\n");
         return -1;
     }
 
@@ -329,7 +329,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     {
 	    if (LMS_SetLOFrequency(s->device,LMS_CH_RX, 2, (double)p->rx_freq[0])!=0)
 	    {
-		fprintf(stderr, "Failed to Set Rx frequency: %s\n", LMS_GetLastErrorMessage());
+		fprintf(stderr, "Failed to Set Rx frequency\n");
 		return -1;
 	    }
      }
@@ -338,7 +338,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     {
 	    if (LMS_SetLOFrequency(s->device,LMS_CH_TX, 2,(double)p->tx_freq[0])!=0)
 	    {
-		fprintf(stderr, "Failed to Set Tx frequency: %s\n", LMS_GetLastErrorMessage());
+		fprintf(stderr, "Failed to Set Tx frequency\n");
 		return -1;
 	    }
     }
@@ -351,7 +351,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
             unsigned gain = p->tx_gain[ch];
             LMS_GetGaindB(s->device, LMS_CH_TX, ch, &gain);
             if (LMS_SetLPFBW(s->device, LMS_CH_TX, ch,(double)(p->tx_bandwidth[0]>5e6 ? p->tx_bandwidth[0] : 5e6))!=0)
-                fprintf(stderr, "Failed set TX LPF: %s\n", LMS_GetLastErrorMessage());            
+                fprintf(stderr, "Failed set TX LPF\n");
 	    LMS_SetGaindB(s->device, LMS_CH_TX, ch, gain);
         }
 
@@ -359,7 +359,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
         {
             printf("Configuring Rx LPF for ch %i\n", ch);
             if (LMS_SetLPFBW(s->device, LMS_CH_RX, ch,(double)p->rx_bandwidth[0])!=0)
-                fprintf(stderr, "Failed to set RX LPF: %s\n", LMS_GetLastErrorMessage());
+                fprintf(stderr, "Failed to set RX LPF\n");
         }
     }
     
@@ -369,14 +369,14 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
         {
             printf("Calibrating Tx channel :%i\n", ch);
             if (LMS_Calibrate(s->device, LMS_CH_TX, ch,(double)p->tx_bandwidth[0],0)!=0)  
-                fprintf(stderr, "Failed to calibrate Tx: %s\n", LMS_GetLastErrorMessage());
+                fprintf(stderr, "Failed to calibrate Tx\n");
         }
 
         for(int ch=0; ch< s->rx_channel_count; ++ch)
         {
             printf("Calibrating Rx channel :%i\n", ch);
             if (LMS_Calibrate(s->device, LMS_CH_RX, ch,(double)p->rx_bandwidth[0],0)!=0)
-                fprintf(stderr, "Failed to calibrate Rx: %s\n", LMS_GetLastErrorMessage());
+                fprintf(stderr, "Failed to calibrate Rx\n");
         }
     }
 
@@ -475,7 +475,7 @@ int trx_driver_init(TRXState *s1)
     {
         if ( LMS_Init(s->device)!=0)
         {
-            fprintf(stderr, "LMS Init failed: %s\n",LMS_GetLastErrorMessage());
+            fprintf(stderr, "LMS Init failed\n");
             return -1;
         }
         s->ini_file = 0;
