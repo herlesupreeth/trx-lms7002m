@@ -21,7 +21,7 @@ extern "C" {
 
 #define CALIBRATE_FILTER    2
 #define CALIBRATE_IQDC      1
-#define MAX_NUM_CH 2   
+#define MAX_NUM_CH 2
 using namespace std;
 typedef struct TRXLmsState          TRXLmsState;
 
@@ -122,6 +122,15 @@ static int trx_lms7002m_read(TRXState *s1, trx_timestamp_t *ptimestamp, void **p
     return ret;
 }
 
+void trx_lms7002m_write2(TRXState *s, trx_timestamp_t timestamp, const void **samples, int count, int port, TRXWriteMetadata *md)
+{
+    trx_lms7002m_write(s, timestamp, samples, count, md->flags, port);
+}
+int trx_lms7002m_read2(TRXState *s, trx_timestamp_t *ptimestamp, void **samples, int count, int port, TRXReadMetadata *md)
+{
+    return trx_lms7002m_read(s, ptimestamp, samples, count, port);
+}
+
 
 static void trx_lms7002m_write_int(TRXState *s1, trx_timestamp_t timestamp,
                                const void **samples, int count, int flags,
@@ -138,7 +147,7 @@ static void trx_lms7002m_write_int(TRXState *s1, trx_timestamp_t timestamp,
     meta.timestamp = timestamp;
 
     for (int ch = 0; ch < s->tx_channel_count; ch++)
-    	for (int i = 0; i < count*2; i++)	
+    	for (int i = 0; i < count*2; i++)
 	    tx_buffers[ch][i] = ((const float*)samples[ch])[i]*maxValue;
 
     for (int ch = 0; ch < s->tx_channel_count; ch++)
@@ -154,7 +163,7 @@ static int trx_lms7002m_read_int(TRXState *s1, trx_timestamp_t *ptimestamp, void
     meta.flushPartialPacket = false;
 
     // First shot ?
-    if (!s->started) {           
+    if (!s->started) {
         for (int ch = 0; ch < s->rx_channel_count; ch++)
             rx_buffers[ch] = new int16_t[count*2];
         for (int ch = 0; ch < s->tx_channel_count; ch++)
@@ -172,12 +181,21 @@ static int trx_lms7002m_read_int(TRXState *s1, trx_timestamp_t *ptimestamp, void
     	ret = LMS_RecvStream(&s->rx_stream[ch],rx_buffers[ch],count,&meta,30);
 
     for (int ch = 0; ch < s->rx_channel_count; ch++)
-    	for (int i = 0; i < count*2; i++)	
-	    ((float*)psamples[ch])[i] = rx_buffers[ch][i]/maxValue; 
+    	for (int i = 0; i < count*2; i++)
+	    ((float*)psamples[ch])[i] = rx_buffers[ch][i]/maxValue;
 
     *ptimestamp = meta.timestamp;
 
     return ret;
+}
+
+void trx_lms7002m_write_int2(TRXState *s, trx_timestamp_t timestamp, const void **samples, int count, int port, TRXWriteMetadata *md)
+{
+    trx_lms7002m_write_int(s, timestamp, samples, count, md->flags, port);
+}
+int trx_lms7002m_read_int2(TRXState *s, trx_timestamp_t *ptimestamp, void **samples, int count, int port, TRXReadMetadata *md)
+{
+    return trx_lms7002m_read_int(s, ptimestamp, samples, count, port);
 }
 
 static int trx_lms7002m_get_sample_rate(TRXState *s1, TRXFraction *psample_rate,
@@ -193,7 +211,7 @@ static int trx_lms7002m_get_sample_rate(TRXState *s1, TRXFraction *psample_rate,
         for(i = 0; i < sizeof(sample_rate_tab); i++)
         {
             n = sample_rate_tab[i];
-            if (sample_rate_min <= n * 1920000) 
+            if (sample_rate_min <= n * 1920000)
 	    {
                 *psample_rate_num = n;
                 psample_rate->num = n * 1920000;
@@ -201,7 +219,7 @@ static int trx_lms7002m_get_sample_rate(TRXState *s1, TRXFraction *psample_rate,
                 return 0;
             }
         }
-    } 
+    }
     else
     {
         psample_rate->num = (int)(s->sample_rate);
@@ -259,7 +277,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     if (s->ini_file == 0)
     {
         for(int ch=0; ch< s->rx_channel_count; ++ch)
-        { 
+        {
             printf("Set CH%d gains: rx %1.0f; tx %1.0f\n",ch+1, p->rx_gain[ch], p->tx_gain[ch]);
             LMS_EnableChannel(s->device,LMS_CH_RX,ch,true);
             LMS_EnableChannel(s->device,LMS_CH_TX,ch,true);
@@ -270,12 +288,12 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     else
     {
         for(int ch=0; ch< s->rx_channel_count; ++ch)
-        { 
+        {
 	    int ant = LMS_GetAntenna(s->device, LMS_CH_RX, ch);
 	    LMS_SetAntenna(s->device, LMS_CH_RX, ch, ant);
 	}
         for(int ch=0; ch< s->tx_channel_count; ++ch)
-        { 
+        {
 	    int ant = LMS_GetAntenna(s->device, LMS_CH_TX, ch);
 	    LMS_SetAntenna(s->device, LMS_CH_TX, ch, ant);
 	}
@@ -362,13 +380,13 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
                 fprintf(stderr, "Failed to set RX LPF\n");
         }
     }
-    
+
     if (s->calibrate & CALIBRATE_IQDC)
     {
         for(int ch=0; ch< s->tx_channel_count; ++ch)
         {
             printf("Calibrating Tx channel :%i\n", ch);
-            if (LMS_Calibrate(s->device, LMS_CH_TX, ch,(double)p->tx_bandwidth[0],0)!=0)  
+            if (LMS_Calibrate(s->device, LMS_CH_TX, ch,(double)p->tx_bandwidth[0],0)!=0)
                 fprintf(stderr, "Failed to calibrate Tx\n");
         }
 
@@ -396,7 +414,7 @@ int trx_driver_init(TRXState *s1)
 
     if (s1->trx_api_version != TRX_API_VERSION) {
         fprintf(stderr, "ABI compatibility mismatch between LTEENB and TRX driver (LTEENB ABI version=%d, TRX driver ABI version=%d)\n",
-                s1->trx_api_version, TRX_API_VERSION);
+            s1->trx_api_version, TRX_API_VERSION);
         return -1;
     }
 
@@ -454,7 +472,7 @@ int trx_driver_init(TRXState *s1)
         s->tx_power_available = true;
         printf("tx power %.1f dBm\n", s->tx_power);
     }
-  
+
     //Configuration INI file
     configFile = trx_get_param_string(s1, "config_file");
     if (configFile)
@@ -479,7 +497,7 @@ int trx_driver_init(TRXState *s1)
             return -1;
         }
         s->ini_file = 0;
-    }      
+    }
 
     /* Auto calibration */
     char* calibration;
@@ -501,8 +519,8 @@ int trx_driver_init(TRXState *s1)
     /*sample format*/
     for (int i =0; i< MAX_NUM_CH; i++)
         s->rx_stream[i].dataFmt = s->tx_stream[i].dataFmt = lms_stream_t::LMS_FMT_F32;
-    
-    char* sampleFmt = trx_get_param_string(s1, "sample_format"); 
+
+    char* sampleFmt = trx_get_param_string(s1, "sample_format");
     if (sampleFmt) {
         if (strstr(sampleFmt,"16")!=nullptr){
             for (int i =0; i< MAX_NUM_CH; i++)
@@ -520,6 +538,8 @@ int trx_driver_init(TRXState *s1)
     s1->trx_end_func = trx_lms7002m_end;
     s1->trx_write_func = s->rx_stream->dataFmt==lms_stream_t::LMS_FMT_F32 ? trx_lms7002m_write : trx_lms7002m_write_int;
     s1->trx_read_func = s->rx_stream->dataFmt==lms_stream_t::LMS_FMT_F32 ? trx_lms7002m_read : trx_lms7002m_read_int;
+    s1->trx_write_func2 = s->rx_stream->dataFmt==lms_stream_t::LMS_FMT_F32 ? trx_lms7002m_write2 : trx_lms7002m_write_int2;
+    s1->trx_read_func2 = s->rx_stream->dataFmt==lms_stream_t::LMS_FMT_F32 ? trx_lms7002m_read2 : trx_lms7002m_read_int2;
     s1->trx_start_func = trx_lms7002m_start;
     s1->trx_get_sample_rate_func = trx_lms7002m_get_sample_rate;
     s1->trx_get_tx_samples_per_packet_func = trx_lms7002m_get_tx_samples_per_packet_func;

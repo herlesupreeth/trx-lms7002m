@@ -1,13 +1,13 @@
 /* 
- * Amarisoft Transceiver API version 2017-10-13
- * Copyright (C) 2013-2017 Amarisoft
+ * Amarisoft Transceiver API version 2018-12-20
+ * Copyright (C) 2013-2018 Amarisoft
  */
 #ifndef TRX_DRIVER_H
 #define TRX_DRIVER_H
 
 #include <inttypes.h>
 
-#define TRX_API_VERSION 12
+#define TRX_API_VERSION 13
 
 #define TRX_MAX_CHANNELS 16
 #define TRX_MAX_RF_PORT  TRX_MAX_CHANNELS
@@ -104,24 +104,61 @@ typedef struct {
     int64_t rx_overflow_count;
 } TRXStatistics;
 
-
 typedef void __attribute__ ((format (printf, 2, 3))) (*trx_printf_cb)(void *, const char *fmt, ... );
 
-/* only used for TDD */
-#define TRX_WRITE_FLAG_PADDING        (1 << 0)
-#define TRX_WRITE_FLAG_END_OF_BURST   (1 << 1)
-/* HARQ/ACK info, only used for eNodeB testing */
-/* set if HARQ ACK/NACK info is present in the subframe */
-#define TRX_WRITE_FLAG_HARQ_ACK_PRESENT (1 << 2) 
-#define TRX_WRITE_FLAG_HARQ_ACK_SHIFT 3
-#define TRX_WRITE_FLAG_HARQ_ACK0      (1 << TRX_WRITE_FLAG_HARQ_ACK_SHIFT)
-/* only used for TDD UL/DL config 0 */
-#define TRX_WRITE_FLAG_HARQ_ACK1      (1 << (TRX_WRITE_FLAG_HARQ_ACK_SHIFT + 1)) 
-/* timing advance info, only used for eNodeB testing */
-#define TRX_WRITE_FLAG_TA_PRESENT     (1 << 5)
-/* the timing advance consists in 6 bits starting from this bit
-   position */
-#define TRX_WRITE_FLAG_TA_SHIFT       6
+
+/*
+ * Structure used for trx_write_func2:
+ */
+typedef struct {
+
+#define TRX_WRITE_MD_FLAG_PADDING            (1 << 0)       /* Cf trx_write_func */
+#define TRX_WRITE_MD_FLAG_END_OF_BURST       (1 << 1)       /* Cf trx_write_func */
+#define TRX_WRITE_MD_FLAG_HARQ_ACK_PRESENT   (1 << 2)       /* Cf harq_flags */
+#define TRX_WRITE_MD_FLAG_TA_PRESENT         (1 << 3)       /* Cf ta */
+#define TRX_WRITE_MD_FLAG_CUR_TIMESTAMP_REQ  (1 << 4)       /* Cf cur_timestamp field */
+
+    uint32_t flags;
+
+    /* HARQ
+     * only used for TDD
+     * HARQ/ACK info, only used for eNodeB testing
+     * set if HARQ ACK/NACK info is present in the subframe
+     */
+#define TRX_WRITE_MD_HARQ_ACK0              (1 << 0)
+#define TRX_WRITE_MD_HARQ_ACK1              (1 << 1)
+    uint8_t harq_ack;
+
+    /* TA: 6 bits */
+    uint8_t timing_advance;
+
+    /* Current real time timestamp.
+     * If TRX_WRITE_MD_FLAG_CUR_TIMESTAMP_REQ, cur_timestamp may be set by callee.
+     * It represents real time timestamp used to compute RX/TX latency.
+     * Set cur_timestamp_set to non 0 to notify caller.
+     */
+    uint8_t cur_timestamp_set;
+    trx_timestamp_t cur_timestamp;
+
+} TRXWriteMetadata;
+
+/*
+ * Structure used for trx_read_func2:
+ *
+ * Future use
+ */
+typedef struct {
+    uint32_t flags;
+
+} TRXReadMetadata;
+
+
+/* Deprecated, used for trx_write_func
+ * Refer to trx_write_func2 flags */
+#define TRX_WRITE_FLAG_PADDING              TRX_WRITE_MD_FLAG_PADDING
+#define TRX_WRITE_FLAG_END_OF_BURST         TRX_WRITE_MD_FLAG_END_OF_BURST
+
+
 
 struct TRXState {
     /* API version */
@@ -160,7 +197,8 @@ struct TRXState {
     /* Called to start the tranceiver. Return 0 if OK, < 0 if  */
     int (*trx_start_func)(TRXState *s, const TRXDriverParams *p);
 
-    /* Write 'count' samples on each channel of the TX port
+    /* Deprecated, use trx_write_func2 instead.
+       Write 'count' samples on each channel of the TX port
        'tx_port_index'. samples[0] is the array for the first
        channel. timestamp is the time (in samples) at which the first
        sample must be sent. When the TRX_WRITE_FLAG_PADDING flag is
@@ -169,14 +207,16 @@ struct TRXState {
        to indicate in advance that the next write call will have the
        TRX_WRITE_FLAG_PADDING flag set. Note:
        TRX_WRITE_FLAG_END_OF_BURST and TRX_WRITE_FLAG_PADDING are
-       never set simultaneously. */
+       never set simultaneously.
+     */
     void (*trx_write_func)(TRXState *s, trx_timestamp_t timestamp, const void **samples, int count, int flags, int tx_port_index);
 
-    /* Read 'count' samples from each channel. samples[0] is the array
+    /* Deprecated, use trx_read_func2 instead.
+       Read 'count' samples from each channel. samples[0] is the array
        for the first channel. *ptimestamp is the time at which the
        first samples was received. Return the number of sample read
        (=count). 
-       
+
        Note: It is explicitely allowed that the application calls
        trx_write_func, trx_read_func, trx_set_tx_gain_func and
        trx_set_rx_gain_func from different threads.
@@ -228,6 +268,14 @@ struct TRXState {
        available. */
     int (*trx_get_abs_rx_power_func)(TRXState *s, 
                                      float *presult, int channel_num);
+
+    /* Read/Write IQ samples
+     * Available since API v13
+     */
+    void (*trx_write_func2)(TRXState *s, trx_timestamp_t timestamp, const void **samples,
+                            int count, int tx_port_index, TRXWriteMetadata *md);
+    int (*trx_read_func2)(TRXState *s, trx_timestamp_t *ptimestamp, void **samples, int count,
+                          int rx_port_index, TRXReadMetadata *md);
 };
 
 /* return 0 if OK, < 0 if error. */
