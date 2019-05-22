@@ -7,7 +7,7 @@
 
 #include <inttypes.h>
 
-#define TRX_API_VERSION 13
+#define TRX_API_VERSION 14
 
 #define TRX_MAX_CHANNELS 16
 #define TRX_MAX_RF_PORT  TRX_MAX_CHANNELS

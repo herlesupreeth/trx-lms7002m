@@ -261,6 +261,26 @@ static int trx_lms7002m_get_tx_samples_per_packet_func(TRXState *s1)
     return -1;
  }
 
+
+
+//min gain 0
+//max gain ~70-76 (higher will probably degrade signal quality to much)
+static void trx_lms7002m_set_tx_gain_func(TRXState *s1, double gain, int channel_num)
+{
+    TRXLmsState *s = (TRXLmsState*)s1->opaque;
+    if (LMS_SetGaindB(s->device, LMS_CH_TX, channel_num, gain)!=0)
+        fprintf(stderr, "Failed to set Tx gain\n");
+}
+
+//min gain 0
+//max gain Rx: 73
+static void trx_lms7002m_set_rx_gain_func(TRXState *s1, double gain, int channel_num)
+{
+    TRXLmsState *s = (TRXLmsState*)s1->opaque;
+    if (LMS_SetGaindB(s->device, LMS_CH_RX, channel_num, gain)!=0)
+        fprintf(stderr, "Failed to set Rx gain\n");
+}
+
 static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 {
     TRXLmsState *s = (TRXLmsState*)s1->opaque;
@@ -453,7 +473,7 @@ int trx_driver_init(TRXState *s1)
     {
         s->tcxo_calc = val;
         LMS_WriteCustomBoardParam(s->device, 0, val, "");
-	printf("DAC WRITE\n");
+	printf("DAC WRITE %d\n", s->tcxo_calc);
     }
 
     s->rx_power = 0.0;
@@ -545,5 +565,7 @@ int trx_driver_init(TRXState *s1)
     s1->trx_get_tx_samples_per_packet_func = trx_lms7002m_get_tx_samples_per_packet_func;
     s1->trx_get_abs_rx_power_func = trx_lms7002m_get_abs_rx_power_func;
     s1->trx_get_abs_tx_power_func = trx_lms7002m_get_abs_tx_power_func;
+    s1->trx_set_tx_gain_func = trx_lms7002m_set_tx_gain_func;
+    s1->trx_set_rx_gain_func = trx_lms7002m_set_rx_gain_func;
     return 0;
 }
