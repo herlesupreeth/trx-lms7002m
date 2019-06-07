@@ -204,25 +204,42 @@ static int trx_lms7002m_get_sample_rate(TRXState *s1, TRXFraction *psample_rate,
     TRXLmsState *s = (TRXLmsState*)s1->opaque;
 
     // sample rate not specified, align on 1.92Mhz
-    if (!s->sample_rate)
+    if (s->sample_rate <= 0)
     {
-        int i, n;
-        static const char sample_rate_tab[] = {1,2,4,8,12,16};
-        for(i = 0; i < sizeof(sample_rate_tab); i++)
+        if ((!s->ini_file) || (s->sample_rate == 0))
         {
-            n = sample_rate_tab[i];
-            if (sample_rate_min <= n * 1920000)
-	    {
-                *psample_rate_num = n;
-                psample_rate->num = n * 1920000;
-                psample_rate->den = 1;
-                return 0;
+            int i, n;
+            static const char sample_rate_tab[] = {1,2,4,8,12,16};
+            for(i = 0; i < sizeof(sample_rate_tab); i++)
+            {
+                n = sample_rate_tab[i];
+                if (sample_rate_min <= n * 1920000)
+                {
+                    *psample_rate_num = n;
+                    psample_rate->num = n * 1920000;
+                    psample_rate->den = 1;
+                    s->sample_rate = psample_rate->num;
+                    printf("Automatic sample rate: %f MSps\n", (double)s->sample_rate/1e6);
+                    return 0;
+                }
             }
         }
+        else
+        {
+            double srate;
+            LMS_GetSampleRate(s->device, LMS_CH_RX, 0, &srate, nullptr);
+	    printf("Use sample rate from INI file %f MSps\n", srate/1e6);
+            psample_rate->num = int(srate);
+            psample_rate->den = 1;
+            *psample_rate_num = 0;
+       	    return 0;
+        }
+
     }
     else
     {
-        psample_rate->num = (int)(s->sample_rate);
+        printf("Sample rate: %f MSps\n", (double)s->sample_rate/1e6);
+        psample_rate->num = s->sample_rate;
         psample_rate->den = 1;
         *psample_rate_num = 0;
         return 0;
@@ -290,7 +307,6 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
         return -1;
     }
 
-    s->sample_rate = p->sample_rate[0].num / p->sample_rate[0].den;
     s->tx_channel_count = p->tx_channel_count;
     s->rx_channel_count = p->rx_channel_count;
 
@@ -319,17 +335,17 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 	}
     }
 
-    double refCLK;
-    printf ("CH RX %d; TX %d\n",s->rx_channel_count,s->tx_channel_count);
-
-    printf("SR:   %.3f MHz\n", (float)s->sample_rate / 1e6);
-    printf("DEC/INT: %d\n", s->dec_inter);
-
-    if (LMS_SetSampleRate(s->device,s->sample_rate,s->dec_inter)!=0)
+    if (s->sample_rate > 0)
     {
-        fprintf(stderr, "Failed to set sample rate\n");
-        return -1;
+        printf("DEC/INT: %d\n", s->dec_inter);
+        if ((LMS_SetSampleRateDir(s->device, LMS_CH_RX, s->sample_rate,s->dec_inter)!=0)
+         || (LMS_SetSampleRateDir(s->device, LMS_CH_TX, s->sample_rate,s->dec_inter)!=0))
+        {
+            fprintf(stderr, "Failed to set sample rate\n");
+            return -1;
+        }
     }
+    printf ("CH RX %d; TX %d\n",s->rx_channel_count,s->tx_channel_count);
 
     for(int ch=0; ch< s->rx_channel_count; ++ch)
     {
