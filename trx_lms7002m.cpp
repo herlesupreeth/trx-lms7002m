@@ -519,7 +519,7 @@ int trx_driver_init(TRXState *s1)
 
     /* Auto calibration */
     char* calibration;
-    LMS_EnableCalibCache(s->device,false);
+    LMS_EnableCache(s->device,false);
     calibration = trx_get_param_string(s1, "calibration");
     s->calibrate = CALIBRATE_FILTER;
     if (calibration)
