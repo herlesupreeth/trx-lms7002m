@@ -362,7 +362,8 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     {
         s->sample_rate = p->sample_rate[0].num / p->sample_rate[0].den;
         printf("DEC/INT: %d\n", s->dec_inter);
-        if (LMS_SetSampleRate(s->device,s->sample_rate,s->dec_inter)!=0)
+        if ((LMS_SetSampleRateDir(s->device, LMS_CH_RX, s->sample_rate,s->dec_inter)!=0)
+         || (LMS_SetSampleRateDir(s->device, LMS_CH_TX, s->sample_rate,s->dec_inter)!=0))
         {
             fprintf(stderr, "Failed to set sample rate\n");
             return -1;
@@ -472,7 +473,7 @@ int trx_driver_init(TRXState *s1)
 
     if (s1->trx_api_version != TRX_API_VERSION) {
         fprintf(stderr, "ABI compatibility mismatch between LTEENB and TRX driver (LTEENB ABI version=%d, TRX driver ABI version=%d)\n",
-                s1->trx_api_version, TRX_API_VERSION);
+            s1->trx_api_version, TRX_API_VERSION);
         return -1;
     }
 
@@ -496,12 +497,15 @@ int trx_driver_init(TRXState *s1)
     // Open LMS7002 port
     int n = LMS_GetDeviceList(list);
 
-    if (n <= lms7002_index)
-	lms7002_index = n-1;
-
-    if (lms7002_index < 0) {
+    if (n <= 0) {
         fprintf(stderr, "No LMS7002 board found: %d\n", n);
         return -1;
+    }
+
+    if (n <= lms7002_index)
+    {
+        printf("Requested device index (%d) not available\ndefaulting to using 1st device\n", lms7002_index);
+        lms7002_index = 0;
     }
 
     if (LMS_Open(&(s->device),list[lms7002_index],stream_index>=0?list[stream_index]:nullptr)!=0) {
@@ -511,9 +515,7 @@ int trx_driver_init(TRXState *s1)
 
     LMS_Program(s->device, nullptr, 0, "FX3 Reset", nullptr);
     LMS_Close(s->device);
-
     sleep(1);
-
     // Open LMS7002 port
     n= LMS_GetDeviceList(list);
 
