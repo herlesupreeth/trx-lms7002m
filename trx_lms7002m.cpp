@@ -474,11 +474,17 @@ int trx_driver_init(TRXState *s1)
         lms7002_index = val;
 
     // Open LMS7002 port
-    int n= LMS_GetDeviceList(list);
+    int n = LMS_GetDeviceList(list);
 
-    if (n <= lms7002_index || lms7002_index < 0) {
+    if (n <= 0) {
         fprintf(stderr, "No LMS7002 board found: %d\n", n);
         return -1;
+    }
+
+    if (n <= lms7002_index)
+    {
+        printf("Requested device index (%d) not available\ndefaulting to using 1st device\n", lms7002_index);
+        lms7002_index = 0;
     }
 
     if (LMS_Open(&(s->device),list[lms7002_index],stream_index>=0?list[stream_index]:nullptr)!=0) {
