@@ -206,7 +206,7 @@ static int trx_lms7002m_get_sample_rate(TRXState *s1, TRXFraction *psample_rate,
     // sample rate not specified, align on 1.92Mhz
     if (s->sample_rate <= 0)
     {
-        if ((!s->ini_file) || (s->sample_rate == 0))
+        if (!s->ini_file)
         {
             int i, n;
             static const char sample_rate_tab[] = {1,2,4,8,12,16};
@@ -335,8 +335,11 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 	}
     }
 
-    if (s->sample_rate > 0)
+    printf ("CH RX %d; TX %d\n",s->rx_channel_count,s->tx_channel_count);
+    printf("SR:   %.3f MHz\n", (float)p->sample_rate[0].num / p->sample_rate[0].den/ 1e6);
+    if (s->sample_rate || (!s->ini_file))
     {
+        s->sample_rate = p->sample_rate[0].num / p->sample_rate[0].den;
         printf("DEC/INT: %d\n", s->dec_inter);
         if ((LMS_SetSampleRateDir(s->device, LMS_CH_RX, s->sample_rate,s->dec_inter)!=0)
          || (LMS_SetSampleRateDir(s->device, LMS_CH_TX, s->sample_rate,s->dec_inter)!=0))
@@ -433,7 +436,6 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
                 fprintf(stderr, "Failed to calibrate Rx\n");
         }
     }
-
     fprintf(stderr, "Running\n");
     return 0;
 }
