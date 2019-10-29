@@ -62,6 +62,16 @@ static int64_t get_time_us(void)
     return (int64_t)ts.tv_sec * 1000000 + (ts.tv_nsec / 1000U) - trx_lms_t0;
 }
 
+void LogHandler(int lvl, const char *msg)
+{
+    if (lvl <= LMS_LOG_ERROR) {
+        fprintf(stderr, "%s\n", msg);
+        fprintf(stderr, "Received error from LimeSuite library. Terminating..\n");
+        std::terminate();
+    }
+    printf("%s\n", msg);
+}
+
 static void trx_lms7002m_end(TRXState *s1)
 {
     TRXLmsState *s = (TRXLmsState*)s1->opaque;
@@ -378,7 +388,8 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 	    s->rx_stream[ch].fifoSize = 256*1024;
 	    s->rx_stream[ch].throughputVsLatency = 0.3;
 	    s->rx_stream[ch].isTx = false;
-    	    LMS_SetupStream(s->device, &s->rx_stream[ch]);
+    	    if (LMS_SetupStream(s->device, &s->rx_stream[ch])!=0)
+                return -1;
     }
 
     for(int ch=0; ch< s->tx_channel_count; ++ch)
@@ -388,7 +399,8 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 	    s->tx_stream[ch].fifoSize = 256*1024;
 	    s->tx_stream[ch].throughputVsLatency = 0.3;
 	    s->tx_stream[ch].isTx = true;
-	    LMS_SetupStream(s->device, &s->tx_stream[ch]);
+	    if (LMS_SetupStream(s->device, &s->tx_stream[ch])!=0)
+                return -1;
     }
 
     if (LMS_SetLOFrequency(s->device,LMS_CH_RX, 0, (double)p->rx_freq[0])!=0)
@@ -457,7 +469,8 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
                 fprintf(stderr, "Failed to calibrate Rx\n");
         }
     }
-    fprintf(stderr, "Running\n");
+    LMS_RegisterLogHandler(LogHandler);
+    printf("Running\n");
     return 0;
 }
 
