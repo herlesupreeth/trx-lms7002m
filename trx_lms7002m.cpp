@@ -43,6 +43,7 @@ struct TRXLmsState {
     int tdd_trx_stop_delay;
     int tdd_trx_switch_mode;
     int tdd_trx_switch_dir;
+    int tdd_mode_reg;
     bool rx_power_available;
     bool tx_power_available;
     bool tdd_tx_en_ctrl;
@@ -323,10 +324,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
         return -1;
     }
 
-    int tdd_trx_start_delay;
-    int tdd_trx_stop_delay;
-    int tdd_trx_switch_mode;
-
+    LMS_WriteFPGAReg(s->device,0x18, s->tdd_mode_reg);
     LMS_WriteFPGAReg(s->device,0x10, s->tdd_trx_start_delay);
     LMS_WriteFPGAReg(s->device,0x11, s->tdd_trx_stop_delay);
 
@@ -474,6 +472,17 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     return 0;
 }
 
+struct TDDModeParam
+{
+    std::string name;
+    uint8_t offset;
+    uint16_t mask;
+};
+
+const TDDModeParam tdd_params[] = {{"TX2_TOGGLE_INV", 13, 1},{"TX2_TOGGLE_EN",12,1},
+    {"TX1_TOGGLE_INV", 9, 1},{"TX1_TOGGLE_EN",8,1},{"RX2_PATH_SEL",6,3},{"RX2_TOGGLE_INV",5,1},
+    {"RX2_TOGGLE_EN", 4,1}, {"RX1_PATH_SEL", 2,3}, {"RX1_TOGGLE_INV", 1, 1}, {"RX1_TOGGLE_EN", 0,1}};
+
 /* Driver initialization called at eNB startup */
 int trx_driver_init(TRXState *s1)
 {
@@ -585,7 +594,6 @@ int trx_driver_init(TRXState *s1)
         printf("tx TDD_TRX_SWITCH_MODE %d\n", s->tdd_trx_switch_mode);
     }
 
-
     if (trx_get_param_double(s1, &val, "TDD_TRX_SWITCH_DIR") >= 0)
     {
         s->tdd_trx_switch_dir = val;
@@ -598,12 +606,21 @@ int trx_driver_init(TRXState *s1)
         printf("tx TDD_TX_EN_CTRL %d\n", s->tdd_tx_en_ctrl);
     }
 
-
     if (trx_get_param_double(s1, &val, "TDD_TX_EN_DIR") >= 0)
     {
         s->tdd_tx_en_dir = val;
         printf("tx TDD_TX_EN_DIR %d\n", s->tdd_tx_en_dir);
     }
+
+    for (const auto& param : tdd_params){
+        if (trx_get_param_double(s1, &val, param.name.c_str()) >= 0)
+        {
+            s->tdd_mode_reg &= ~(param.mask<<param.offset);
+            s->tdd_mode_reg |= (param.mask & uint16_t(val)) << param.offset;
+            printf("%s %d\n", param.name.c_str(), int(val));
+        }
+    }
+    printf("TDD mode register (0x18) value %04X\n", s->tdd_mode_reg);
 
     //Configuration INI file
     configFile = trx_get_param_string(s1, "config_file");
