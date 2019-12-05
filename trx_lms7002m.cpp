@@ -48,6 +48,8 @@ struct TRXLmsState {
     bool tx_power_available;
     bool tdd_tx_en_ctrl;
     bool tdd_tx_en_dir;
+    bool tdd_rx_en_ctrl;
+    bool tdd_rx_en_dir;
 };
 
 
@@ -333,8 +335,8 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     LMS_WriteFPGAReg(s->device,0x17, 0x0011);
     uint16_t reg13;
     LMS_ReadFPGAReg(s->device,0x13, &reg13);
-    reg13 &= ~((1<<7) | (1 <<15));
-    LMS_WriteFPGAReg(s->device,0x13, reg13 | (s->tdd_tx_en_ctrl<<7) | (s->tdd_tx_en_dir<<15));
+    reg13 &= ~((1<<7)|(1 <<15)|(1<<8)|(1<<14));
+    LMS_WriteFPGAReg(s->device,0x13, reg13|(s->tdd_tx_en_ctrl<<7)|(s->tdd_tx_en_dir<<14)|(s->tdd_rx_en_ctrl<<8)|(s->tdd_rx_en_dir<<15));
 
     s->tx_channel_count = p->tx_channel_count;
     s->rx_channel_count = p->rx_channel_count;
@@ -610,6 +612,18 @@ int trx_driver_init(TRXState *s1)
     {
         s->tdd_tx_en_dir = val;
         printf("tx TDD_TX_EN_DIR %d\n", s->tdd_tx_en_dir);
+    }
+
+    if (trx_get_param_double(s1, &val, "TDD_RX_EN_CTRL") >= 0)
+    {
+        s->tdd_rx_en_ctrl = val;
+        printf("TDD_RX_EN_CTRL %d\n", s->tdd_tx_en_ctrl);
+    }
+
+    if (trx_get_param_double(s1, &val, "TDD_RX_EN_DIR") >= 0)
+    {
+        s->tdd_rx_en_dir = val;
+        printf("TDD_RX_EN_DIR %d\n", s->tdd_tx_en_dir);
     }
 
     for (const auto& param : tdd_params){
