@@ -617,13 +617,13 @@ int trx_driver_init(TRXState *s1)
     if (trx_get_param_double(s1, &val, "TDD_RX_EN_CTRL") >= 0)
     {
         s->tdd_rx_en_ctrl = val;
-        printf("TDD_RX_EN_CTRL %d\n", s->tdd_tx_en_ctrl);
+        printf("TDD_RX_EN_CTRL %d\n", s->tdd_rx_en_ctrl);
     }
 
     if (trx_get_param_double(s1, &val, "TDD_RX_EN_DIR") >= 0)
     {
         s->tdd_rx_en_dir = val;
-        printf("TDD_RX_EN_DIR %d\n", s->tdd_tx_en_dir);
+        printf("TDD_RX_EN_DIR %d\n", s->tdd_rx_en_dir);
     }
 
     for (const auto& param : tdd_params){
