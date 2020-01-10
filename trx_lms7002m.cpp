@@ -1,6 +1,6 @@
 /*
  * LimeMicroSystem transceiver driver
- * Copyright (C) 2015-2018 Amarisoft/LimeMicroSystems
+ * Copyright (C) 2017 Amarisoft/LimeMicroSystems
  */
 #include <stdlib.h>
 #include <stdio.h>
@@ -14,6 +14,7 @@
 #include <sys/time.h>
 #include <iostream>
 #include <lime/LimeSuite.h>
+#include <lime/lms7_device.h>
 
 extern "C" {
 #include "trx_driver.h"
@@ -41,6 +42,9 @@ struct TRXLmsState {
     float tx_power;
     bool rx_power_available;
     bool tx_power_available;
+    int cfr_order[MAX_NUM_CH];
+    float cfr_threshold[MAX_NUM_CH];
+    float cfr_gain[MAX_NUM_CH];
 };
 
 
@@ -48,6 +52,8 @@ int16_t* tx_buffers[MAX_NUM_CH] = {0};
 int16_t* rx_buffers[MAX_NUM_CH] = {0};
 
 static int64_t trx_lms_t0 = 0;
+
+void SetupCFR(lms_device_t * lmsControl, int ch, uint16_t Filt_N, float threshold, float gain);
 
 static int64_t get_time_us(void)
 {
@@ -122,15 +128,6 @@ static int trx_lms7002m_read(TRXState *s1, trx_timestamp_t *ptimestamp, void **p
     return ret;
 }
 
-void trx_lms7002m_write2(TRXState *s, trx_timestamp_t timestamp, const void **samples, int count, int port, TRXWriteMetadata *md)
-{
-    trx_lms7002m_write(s, timestamp, samples, count, md->flags, port);
-}
-int trx_lms7002m_read2(TRXState *s, trx_timestamp_t *ptimestamp, void **samples, int count, int port, TRXReadMetadata *md)
-{
-    return trx_lms7002m_read(s, ptimestamp, samples, count, port);
-}
-
 
 static void trx_lms7002m_write_int(TRXState *s1, trx_timestamp_t timestamp,
                                const void **samples, int count, int flags,
@@ -189,57 +186,31 @@ static int trx_lms7002m_read_int(TRXState *s1, trx_timestamp_t *ptimestamp, void
     return ret;
 }
 
-void trx_lms7002m_write_int2(TRXState *s, trx_timestamp_t timestamp, const void **samples, int count, int port, TRXWriteMetadata *md)
-{
-    trx_lms7002m_write_int(s, timestamp, samples, count, md->flags, port);
-}
-int trx_lms7002m_read_int2(TRXState *s, trx_timestamp_t *ptimestamp, void **samples, int count, int port, TRXReadMetadata *md)
-{
-    return trx_lms7002m_read_int(s, ptimestamp, samples, count, port);
-}
-
 static int trx_lms7002m_get_sample_rate(TRXState *s1, TRXFraction *psample_rate,
                                      int *psample_rate_num, int sample_rate_min)
 {
     TRXLmsState *s = (TRXLmsState*)s1->opaque;
 
     // sample rate not specified, align on 1.92Mhz
-    if (s->sample_rate <= 0)
+    if (!s->sample_rate)
     {
-        if ((!s->ini_file) || (s->sample_rate == 0))
+        int i, n;
+        static const char sample_rate_tab[] = {1,2,4,8,12,16};
+        for(i = 0; i < sizeof(sample_rate_tab); i++)
         {
-            int i, n;
-            static const char sample_rate_tab[] = {1,2,4,8,12,16};
-            for(i = 0; i < sizeof(sample_rate_tab); i++)
-            {
-                n = sample_rate_tab[i];
-                if (sample_rate_min <= n * 1920000)
-                {
-                    *psample_rate_num = n;
-                    psample_rate->num = n * 1920000;
-                    psample_rate->den = 1;
-                    s->sample_rate = psample_rate->num;
-                    printf("Automatic sample rate: %f MSps\n", (double)s->sample_rate/1e6);
-                    return 0;
-                }
+            n = sample_rate_tab[i];
+            if (sample_rate_min <= n * 1920000)
+	    {
+                *psample_rate_num = n;
+                psample_rate->num = n * 1920000;
+                psample_rate->den = 1;
+                return 0;
             }
         }
-        else
-        {
-            double srate;
-            LMS_GetSampleRate(s->device, LMS_CH_RX, 0, &srate, nullptr);
-	    printf("Use sample rate from INI file %f MSps\n", srate/1e6);
-            psample_rate->num = int(srate);
-            psample_rate->den = 1;
-            *psample_rate_num = 0;
-       	    return 0;
-        }
-
     }
     else
     {
-        printf("Sample rate: %f MSps\n", (double)s->sample_rate/1e6);
-        psample_rate->num = s->sample_rate;
+        psample_rate->num = (int)(s->sample_rate);
         psample_rate->den = 1;
         *psample_rate_num = 0;
         return 0;
@@ -278,26 +249,6 @@ static int trx_lms7002m_get_tx_samples_per_packet_func(TRXState *s1)
     return -1;
  }
 
-
-
-//min gain 0
-//max gain ~70-76 (higher will probably degrade signal quality to much)
-static void trx_lms7002m_set_tx_gain_func(TRXState *s1, double gain, int channel_num)
-{
-    TRXLmsState *s = (TRXLmsState*)s1->opaque;
-    if (LMS_SetGaindB(s->device, LMS_CH_TX, channel_num, gain)!=0)
-        fprintf(stderr, "Failed to set Tx gain\n");
-}
-
-//min gain 0
-//max gain Rx: 73
-static void trx_lms7002m_set_rx_gain_func(TRXState *s1, double gain, int channel_num)
-{
-    TRXLmsState *s = (TRXLmsState*)s1->opaque;
-    if (LMS_SetGaindB(s->device, LMS_CH_RX, channel_num, gain)!=0)
-        fprintf(stderr, "Failed to set Rx gain\n");
-}
-
 static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 {
     TRXLmsState *s = (TRXLmsState*)s1->opaque;
@@ -307,6 +258,11 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
         return -1;
     }
 
+    LMS_WriteFPGAReg(s->device, 0x4e, 0x3);
+    for(int ch=0; ch < MAX_NUM_CH; ++ch)
+        SetupCFR(s->device, ch, s->cfr_order[ch], s->cfr_threshold[ch],  s->cfr_gain[ch]);
+
+    s->sample_rate = p->sample_rate[0].num / p->sample_rate[0].den;
     s->tx_channel_count = p->tx_channel_count;
     s->rx_channel_count = p->rx_channel_count;
 
@@ -335,17 +291,35 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 	}
     }
 
-    if (s->sample_rate > 0)
+    for(int ch=2; ch< 4; ++ch)
     {
-        printf("DEC/INT: %d\n", s->dec_inter);
-        if ((LMS_SetSampleRateDir(s->device, LMS_CH_RX, s->sample_rate,s->dec_inter)!=0)
-         || (LMS_SetSampleRateDir(s->device, LMS_CH_TX, s->sample_rate,s->dec_inter)!=0))
-        {
-            fprintf(stderr, "Failed to set sample rate\n");
-            return -1;
-        }
+        LMS_EnableChannel(s->device,LMS_CH_RX,ch,true);
+        LMS_EnableChannel(s->device,LMS_CH_TX,ch,true);
     }
+
+    double refCLK;
     printf ("CH RX %d; TX %d\n",s->rx_channel_count,s->tx_channel_count);
+
+    printf("SR:   %.3f MHz\n", (float)s->sample_rate / 1e6);
+    printf("DEC/INT: %d\n", s->dec_inter);
+    ((lime::LMS7_Device*)s->device)->SetActiveChip(0);
+    if (LMS_SetSampleRateDir(s->device, LMS_CH_RX, s->sample_rate, s->dec_inter)!=0)
+    {
+        fprintf(stderr, "Failed to set sample rate %s\n",LMS_GetLastErrorMessage());
+        return -1;
+    }
+
+    if (LMS_SetSampleRateDir(s->device, LMS_CH_TX, s->sample_rate, s->dec_inter*4)!=0)
+    {
+        fprintf(stderr, "Failed to set sample rate %s\n",LMS_GetLastErrorMessage());
+        return -1;
+    }
+
+    for(int ch=2; ch< 4; ++ch)
+    {
+        LMS_EnableChannel(s->device,LMS_CH_RX,ch,false);
+        LMS_EnableChannel(s->device,LMS_CH_TX,ch,false);
+    }
 
     for(int ch=0; ch< s->rx_channel_count; ++ch)
     {
@@ -369,13 +343,13 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 
     if (LMS_SetLOFrequency(s->device,LMS_CH_RX, 0, (double)p->rx_freq[0])!=0)
     {
-        fprintf(stderr, "Failed to Set Rx frequency\n");
+        fprintf(stderr, "Failed to Set Rx frequency: %s\n", LMS_GetLastErrorMessage());
         return -1;
     }
 
     if (LMS_SetLOFrequency(s->device,LMS_CH_TX, 0,(double)p->tx_freq[0])!=0)
     {
-        fprintf(stderr, "Failed to Set Tx frequency\n");
+        fprintf(stderr, "Failed to Set Tx frequency: %s\n", LMS_GetLastErrorMessage());
         return -1;
     }
 
@@ -383,7 +357,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     {
 	    if (LMS_SetLOFrequency(s->device,LMS_CH_RX, 2, (double)p->rx_freq[0])!=0)
 	    {
-		fprintf(stderr, "Failed to Set Rx frequency\n");
+		fprintf(stderr, "Failed to Set Rx frequency: %s\n", LMS_GetLastErrorMessage());
 		return -1;
 	    }
      }
@@ -392,7 +366,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     {
 	    if (LMS_SetLOFrequency(s->device,LMS_CH_TX, 2,(double)p->tx_freq[0])!=0)
 	    {
-		fprintf(stderr, "Failed to Set Tx frequency\n");
+		fprintf(stderr, "Failed to Set Tx frequency: %s\n", LMS_GetLastErrorMessage());
 		return -1;
 	    }
     }
@@ -405,7 +379,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
             unsigned gain = p->tx_gain[ch];
             LMS_GetGaindB(s->device, LMS_CH_TX, ch, &gain);
             if (LMS_SetLPFBW(s->device, LMS_CH_TX, ch,(double)(p->tx_bandwidth[0]>5e6 ? p->tx_bandwidth[0] : 5e6))!=0)
-                fprintf(stderr, "Failed set TX LPF\n");
+                fprintf(stderr, "Failed set TX LPF: %s\n", LMS_GetLastErrorMessage());
 	    LMS_SetGaindB(s->device, LMS_CH_TX, ch, gain);
         }
 
@@ -413,26 +387,32 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
         {
             printf("Configuring Rx LPF for ch %i\n", ch);
             if (LMS_SetLPFBW(s->device, LMS_CH_RX, ch,(double)p->rx_bandwidth[0])!=0)
-                fprintf(stderr, "Failed to set RX LPF\n");
+                fprintf(stderr, "Failed to set RX LPF: %s\n", LMS_GetLastErrorMessage());
         }
     }
 
     if (s->calibrate & CALIBRATE_IQDC)
     {
+
         for(int ch=0; ch< s->tx_channel_count; ++ch)
         {
             printf("Calibrating Tx channel :%i\n", ch);
             if (LMS_Calibrate(s->device, LMS_CH_TX, ch,(double)p->tx_bandwidth[0],0)!=0)
-                fprintf(stderr, "Failed to calibrate Tx\n");
+                fprintf(stderr, "Failed to calibrate Tx: %s\n", LMS_GetLastErrorMessage());
         }
 
         for(int ch=0; ch< s->rx_channel_count; ++ch)
         {
             printf("Calibrating Rx channel :%i\n", ch);
             if (LMS_Calibrate(s->device, LMS_CH_RX, ch,(double)p->rx_bandwidth[0],0)!=0)
-                fprintf(stderr, "Failed to calibrate Rx\n");
+                fprintf(stderr, "Failed to calibrate Rx: %s\n", LMS_GetLastErrorMessage());
         }
     }
+
+    uint16_t reg20;
+    LMS_ReadLMSReg(s->device, 0x20, &reg20);
+    LMS_WriteLMSReg(s->device, 0x20, reg20 & 0x55FF);
+    LMS_WriteLMSReg(s->device, 0x20, reg20 | 0xFF00);
 
     fprintf(stderr, "Running\n");
     return 0;
@@ -450,7 +430,7 @@ int trx_driver_init(TRXState *s1)
 
     if (s1->trx_api_version != TRX_API_VERSION) {
         fprintf(stderr, "ABI compatibility mismatch between LTEENB and TRX driver (LTEENB ABI version=%d, TRX driver ABI version=%d)\n",
-            s1->trx_api_version, TRX_API_VERSION);
+                s1->trx_api_version, TRX_API_VERSION);
         return -1;
     }
 
@@ -488,25 +468,8 @@ int trx_driver_init(TRXState *s1)
     if (trx_get_param_double(s1, &val, "tcxo_calc") >= 0)
     {
         s->tcxo_calc = val;
-        LMS_WriteCustomBoardParam(s->device, 0, val, "");
-	printf("DAC WRITE %d\n", s->tcxo_calc);
-    }
-
-    s->rx_power = 0.0;
-    s->tx_power = 0.0;
-    s->rx_power_available = false;
-    s->tx_power_available = false;
-    if (trx_get_param_double(s1, &val, "rx_power") >= 0)
-    {
-        s->rx_power = val;
-        s->rx_power_available = true;
-        printf("rx power %.1f dBm\n", s->rx_power);
-    }
-    if (trx_get_param_double(s1, &val, "tx_power") >= 0)
-    {
-        s->tx_power = val;
-        s->tx_power_available = true;
-        printf("tx power %.1f dBm\n", s->tx_power);
+        LMS_VCTCXOWrite(s->device,val);
+	printf("DAC WRITE\n");
     }
 
     //Configuration INI file
@@ -529,15 +492,36 @@ int trx_driver_init(TRXState *s1)
     {
         if ( LMS_Init(s->device)!=0)
         {
-            fprintf(stderr, "LMS Init failed\n");
+            fprintf(stderr, "LMS Init failed: %s\n",LMS_GetLastErrorMessage());
             return -1;
         }
         s->ini_file = 0;
     }
 
+    configFile = trx_get_param_string(s1, "config_file_2");
+    if (configFile)
+    {
+	((lime::LMS7_Device*)s->device)->SetActiveChip(1);
+	configFile1 = (char*)malloc(strlen(s1->path) + strlen(configFile) + 2);
+	sprintf(configFile1, "%s/%s", s1->path, configFile);
+	fprintf(stderr, "Config file 2: %s\n", configFile1);
+	if  (LMS_LoadConfig(s->device,configFile1)!=0) //load registers configuration from file
+	{
+	    fprintf(stderr, "Error loading file %s\n", configFile1);
+	}
+    	((lime::LMS7_Device*)s->device)->SetActiveChip(0);
+	free(configFile1);
+    }
+
+    LMS_WriteFPGAReg(s->device, 0xFFFF, 3);
+    if (trx_get_param_double(s1, &val, "tdd_trx_start_delay") >= 0)
+         LMS_WriteFPGAReg(s->device, 0x10, val);
+    if (trx_get_param_double(s1, &val, "tdd_trx_stop_delay") >= 0)
+         LMS_WriteFPGAReg(s->device, 0x11, val);
+
     /* Auto calibration */
     char* calibration;
-    LMS_EnableCache(s->device,false);
+    LMS_EnableCalibCache(s->device,false);
     calibration = trx_get_param_string(s1, "calibration");
     s->calibrate = CALIBRATE_FILTER;
     if (calibration)
@@ -569,19 +553,130 @@ int trx_driver_init(TRXState *s1)
         free(sampleFmt);
     }
 
+    /* CFR config */
+    s->cfr_order[0] = s->cfr_order[1] = 0;
+    if (trx_get_param_double(s1, &val, "cfr_fir_order") >= 0)
+        s->cfr_order[0] = s->cfr_order[1] = val;
+    if (trx_get_param_double(s1, &val, "cfr_fir_order_A") >= 0)
+        s->cfr_order[0] = val;
+    if (trx_get_param_double(s1, &val, "cfr_fir_order_B") >= 0)
+        s->cfr_order[1] = val;
+
+    s->cfr_threshold[0] = s->cfr_threshold[1] = 0;
+    if (trx_get_param_double(s1, &val, "cfr_threshold") >= 0)
+        s->cfr_threshold[0] = s->cfr_threshold[1] = val;
+    if (trx_get_param_double(s1, &val, "cfr_threshold_A") >= 0)
+        s->cfr_threshold[0] = val;
+    if (trx_get_param_double(s1, &val, "cfr_threshold_B") >= 0)
+        s->cfr_threshold[1] = val;
+
+    s->cfr_gain[0] = s->cfr_gain[1] = -1.0;
+    if (trx_get_param_double(s1, &val, "cfr_gain") >= 0)
+        s->cfr_gain[0] = s->cfr_gain[1] = val;
+    if (trx_get_param_double(s1, &val, "cfr_gain_A") >= 0)
+        s->cfr_gain[0] = val;
+    if (trx_get_param_double(s1, &val, "cfr_gain_B") >= 0)
+        s->cfr_gain[1] = val;
+
     /* Set callbacks */
     s1->opaque = s;
     s1->trx_end_func = trx_lms7002m_end;
     s1->trx_write_func = s->rx_stream->dataFmt==lms_stream_t::LMS_FMT_F32 ? trx_lms7002m_write : trx_lms7002m_write_int;
     s1->trx_read_func = s->rx_stream->dataFmt==lms_stream_t::LMS_FMT_F32 ? trx_lms7002m_read : trx_lms7002m_read_int;
-    s1->trx_write_func2 = s->rx_stream->dataFmt==lms_stream_t::LMS_FMT_F32 ? trx_lms7002m_write2 : trx_lms7002m_write_int2;
-    s1->trx_read_func2 = s->rx_stream->dataFmt==lms_stream_t::LMS_FMT_F32 ? trx_lms7002m_read2 : trx_lms7002m_read_int2;
     s1->trx_start_func = trx_lms7002m_start;
     s1->trx_get_sample_rate_func = trx_lms7002m_get_sample_rate;
     s1->trx_get_tx_samples_per_packet_func = trx_lms7002m_get_tx_samples_per_packet_func;
     s1->trx_get_abs_rx_power_func = trx_lms7002m_get_abs_rx_power_func;
     s1->trx_get_abs_tx_power_func = trx_lms7002m_get_abs_tx_power_func;
-    s1->trx_set_tx_gain_func = trx_lms7002m_set_tx_gain_func;
-    s1->trx_set_rx_gain_func = trx_lms7002m_set_rx_gain_func;
     return 0;
+}
+
+void SetupCFR(lms_device_t * lmsControl, int ch, uint16_t Filt_N, float threshold, float gain)
+{
+    uint16_t msb, lsb = 0;
+    uint16_t data = 0;
+    uint16_t addr = 0;
+    uint16_t i = 0;
+    uint16_t w[40];
+    uint16_t maddressf0 = 0x07; //maddress==14
+    uint16_t maddressf1 = 0x08; //maddress==16
+    uint16_t chVal = 0;
+    printf("CFR config: ch %i, order %i, th %f, gain %f\n", ch, Filt_N, threshold, gain);
+    LMS_ReadFPGAReg(lmsControl, 0xFFFF, &chVal);
+    LMS_WriteFPGAReg(lmsControl, 0xFFFF, ch+1);
+
+    const uint16_t regAddr = ch ? 0x47 : 0x45;
+    uint16_t regVal = 0;
+    LMS_ReadFPGAReg(lmsControl, regAddr, &regVal);
+    regVal &= ~0x700; //clear filter bits, disable bypass
+
+    //gain settings
+    if (gain > 0.0f)
+    {
+        gain *= 8192.0f;
+        gain = (gain) < 0.0f ? 0.0f : (gain > 32767.0f) ? 32767.0f : gain;
+        LMS_WriteFPGAReg(lmsControl, ch ? 0x4C : 0x4B, uint16_t(gain));
+    }
+    else
+        regVal |= 0x400;
+
+    if (Filt_N < 1 || Filt_N > 40)
+    {   //Bypass CFR
+        LMS_WriteFPGAReg(lmsControl, regAddr, regVal | 0x200);
+        LMS_WriteFPGAReg(lmsControl, 0xFFFF, chVal);
+        return;
+    }
+
+    //write threshold value
+    threshold = (threshold) < 0.0f ? 0.0f : (threshold > 1.0f) ? 1.0f :  threshold;
+    LMS_WriteFPGAReg(lmsControl, ch ? 0x48 : 0x46, uint16_t(threshold*65535.0f));
+
+    for (i = 0; i < Filt_N; i++) w[i] = (uint16_t) (32768.0 * 0.125 * (1.0 - cos(2.0 * M_PI * i / Filt_N)));
+    regVal &= ~0xFF;//clear filter bits,
+    regVal |= Filt_N & 0xFF;
+    LMS_WriteFPGAReg(lmsControl, regVal, regVal | 0x100); //sleep
+
+    msb = lsb = 0;
+    data = 0;
+    i = 0;
+    while (i < 40) {
+        addr = (2 << 15)+ (maddressf0 << 6)+ (msb << 2) + lsb;
+        LMS_WriteFPGAReg(lmsControl, addr, data);
+        addr = (2 << 15)+ (maddressf1 << 6)+ (msb << 2) + lsb;
+        LMS_WriteFPGAReg(lmsControl, addr, data);
+        if (lsb >= 3) {
+            lsb = 0;
+            msb++;
+        } else lsb++;
+        i++;
+    }
+
+    msb = lsb = 0;
+    i = 0;
+    while (i < (Filt_N / 2)) {
+        addr = (2 << 15)+ (maddressf1 << 6)+ (msb << 2) + lsb;
+        data = w[(uint16_t) ((Filt_N - 1) / 2 + 1 + i)];
+        LMS_WriteFPGAReg(lmsControl, addr, data);
+        if (lsb >= 3) {
+            lsb = 0;
+            msb++;
+        } else lsb++;
+        i++;
+    }
+
+    msb = lsb = 0;
+    i = 0;
+    while (i < Filt_N) {
+        addr = (2 << 15)+ (maddressf0 << 6)+ (msb << 2) + lsb;
+        data = w[i];
+        LMS_WriteFPGAReg(lmsControl, addr, data);
+        if (lsb >= 3) {
+            lsb = 0;
+            msb++;
+        } else lsb++;
+        i++;
+    }
+
+    LMS_WriteFPGAReg(lmsControl, regAddr, regVal);
+    LMS_WriteFPGAReg(lmsControl, 0xFFFF, chVal);
 }
