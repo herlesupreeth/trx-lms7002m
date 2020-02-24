@@ -432,7 +432,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     uint16_t reg13;
     LMS_ReadFPGAReg(s->device,0x13, &reg13);
     reg13 &= ~((1<<7)|(1 <<15)|(1<<8)|(1<<14));
-    LMS_WriteFPGAReg(s->device,0x13, 0x60);
+    LMS_WriteFPGAReg(s->device,0x13, reg13 | 0x60);
     if (s->calibrate & CALIBRATE_FILTER)
     {
         for(int ch=0; ch< s->tx_channel_count; ++ch)
