@@ -333,10 +333,6 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
     LMS_WriteFPGAReg(s->device,0xCC, s->tdd_trx_switch_mode);
     LMS_WriteFPGAReg(s->device,0xCD, s->tdd_trx_switch_dir);
     LMS_WriteFPGAReg(s->device,0x17, 0x0011);
-    uint16_t reg13;
-    LMS_ReadFPGAReg(s->device,0x13, &reg13);
-    reg13 &= ~((1<<7)|(1 <<15)|(1<<8)|(1<<14));
-    LMS_WriteFPGAReg(s->device,0x13, reg13|(s->tdd_tx_en_ctrl<<7)|(s->tdd_tx_en_dir<<14)|(s->tdd_rx_en_ctrl<<8)|(s->tdd_rx_en_dir<<15));
 
     s->tx_channel_count = p->tx_channel_count;
     s->rx_channel_count = p->rx_channel_count;
@@ -433,6 +429,10 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
 	    }
     }
 
+    uint16_t reg13;
+    LMS_ReadFPGAReg(s->device,0x13, &reg13);
+    reg13 &= ~((1<<7)|(1 <<15)|(1<<8)|(1<<14));
+    LMS_WriteFPGAReg(s->device,0x13, 0x60);
     if (s->calibrate & CALIBRATE_FILTER)
     {
         for(int ch=0; ch< s->tx_channel_count; ++ch)
@@ -469,6 +469,7 @@ static int trx_lms7002m_start(TRXState *s1, const TRXDriverParams *p)
                 fprintf(stderr, "Failed to calibrate Rx\n");
         }
     }
+    LMS_WriteFPGAReg(s->device,0x13, reg13|(s->tdd_tx_en_ctrl<<7)|(s->tdd_tx_en_dir<<14)|(s->tdd_rx_en_ctrl<<8)|(s->tdd_rx_en_dir<<15));
     LMS_RegisterLogHandler(LogHandler);
     printf("Running\n");
     return 0;
