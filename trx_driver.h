@@ -1,6 +1,6 @@
 /* 
- * Amarisoft Transceiver API version 2019-09-30
- * Copyright (C) 2013-2019 Amarisoft
+ * Amarisoft Transceiver API version 2020-04-20
+ * Copyright (C) 2013-2020 Amarisoft
  */
 #ifndef TRX_DRIVER_H
 #define TRX_DRIVER_H
