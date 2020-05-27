@@ -1,6 +1,6 @@
 /*
  * LimeMicroSystem transceiver driver
- * Copyright (C) 2015-2018 Amarisoft/LimeMicroSystems
+ * Copyright (C) 2015-2020 Amarisoft/LimeMicroSystems
  */
 #include <stdlib.h>
 #include <stdio.h>
